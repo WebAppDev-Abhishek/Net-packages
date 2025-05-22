@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device & URL Monitor</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --bg-color: #2c3034;
+            --text-color: #212529;
+            --card-bg: #ffffff;
+            --border-color: #dee2e6;
+            --table-header-bg: #f8f9fa;
+            --table-hover-bg: #f8f9fa;
+            --stats-card-border: #0d6efd;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-color: var(--border-color);
+        }
+
+        .table {
+            color: var(--text-color);
+        }
+
+        .table th {
+            background-color: var(--table-header-bg);
+        }
+
+        .table-hover tbody tr:hover {
+            background-color: var(--table-hover-bg);
+        }
+
+        .stats-card {
+            border-left: 4px solid var(--stats-card-border);
+        }
+
+        .url-generator {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+        }
+
+        .refresh-btn {
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .refresh-btn:hover {
+            transform: rotate(180deg);
+        }
+
+        .url-generator {
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .url-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .copy-btn {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .copy-btn:hover {
+            transform: scale(1.05);
+        }
+        .fab-container, .fab-button, .fab-tooltip {
+            display: none;
+        }
+
+        /* Save Notification Modal Styles */
+        .save-notification {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 9999;
+        }
+
+        .save-notification-content {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: var(--card-bg);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            min-width: 300px;
+        }
+
+        .save-notification-buttons {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .save-notification-buttons button {
+            padding: 8px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .save-notification-buttons .save-btn {
+            background-color: #0d6efd;
+            color: white;
+            border: none;
+        }
+
+        .save-notification-buttons .cancel-btn {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+        }
+
+        .save-notification-buttons button:hover {
+            opacity: 0.9;
+            transform: scale(1.05);
+        }
+
+        /* Save Button Styles */
+        .save-button-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .save-button {
+            background-color: #0d6efd;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .save-button:hover {
+            transform: scale(1.1);
+            background-color: #0b5ed7;
+        }
+
+        .save-button i {
+            font-size: 24px;
+        }
+
+        .save-button.tooltip {
+            position: relative;
+        }
+
+        .save-button.tooltip::after {
+            content: "Save Data";
+            position: absolute;
+            bottom: 100%;
+            right: 50%;
+            transform: translateX(50%);
+            padding: 5px 10px;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .save-button.tooltip:hover::after {
+            opacity: 1;
+            visibility: visible;
+            bottom: 120%;
+        }
+
+        .save-button.saving {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container-fluid py-4">
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h1 class="h3 mb-0">Device & URL Monitor</h1>
+                    <button class="btn btn-outline-primary refresh-btn" onclick="refreshData()" title="Refresh Data">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card h-100">
+                    <div class="card-body">
+                        <h6 class="card-subtitle mb-2 text-muted">Total Devices</h6>
+                        <h2 class="card-title mb-0" id="totalDevices">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card h-100">
+                    <div class="card-body">
+                        <h6 class="card-subtitle mb-2 text-muted">Active Devices</h6>
+                        <h2 class="card-title mb-0" id="activeDevices">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card h-100">
+                    <div class="card-body">
+                        <h6 class="card-subtitle mb-2 text-muted">Total URLs</h6>
+                        <h2 class="card-title mb-0" id="totalUrls">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card h-100">
+                    <div class="card-body">
+                        <h6 class="card-subtitle mb-2 text-muted">Total Visitors</h6>
+                        <h2 class="card-title mb-0" id="totalVisitors">0</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- URL Generator -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="url-generator">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h5 class="mb-3">Generate Tracking URL</h5>
+                            <p class="text-muted mb-0">Create a unique URL to track visitors and their information.</p>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <button id="generateUrlBtn" class="btn btn-primary">
+                                <i class="bi bi-plus-circle"></i> Generate New URL
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Devices Table -->
+        <div class="card mb-4">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Connected Devices</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Status</th>
+                                <th>IP Address</th>
+                                <th>Location</th>
+                                <th>Browser</th>
+                                <th>Operating System</th>
+                                <th>Device</th>
+                                <th>Last Seen</th>
+                                <th>Server</th>
+                            </tr>
+                        </thead>
+                        <tbody id="deviceTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- URLs Table -->
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Generated URLs</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="showUrlStats()">
+                    <i class="bi bi-graph-up"></i> View Statistics
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>URL</th>
+                                <th>Server</th>
+                                <th>Created</th>
+                                <th>Visitors</th>
+                                <th>Last Visit</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="urlTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- URL Visitors Modal -->
+    <div class="modal fade" id="urlVisitorsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">URL Visitors</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Time</th>
+                                    <th>IP Address</th>
+                                    <th>Browser</th>
+                                    <th>OS</th>
+                                    <th>Location</th>
+                                    <th>Device</th>
+                                </tr>
+                            </thead>
+                            <tbody id="urlVisitorsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Save Notification Modal -->
+    <div id="saveNotification" class="save-notification">
+        <div class="save-notification-content">
+            <h5>Save Changes?</h5>
+            <p>Do you want to save the current data before leaving?</p>
+            <div class="save-notification-buttons">
+                <button class="save-btn" onclick="saveAndLeave()">Save & Leave</button>
+                <button class="cancel-btn" onclick="cancelLeave()">Stay on Page</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Save Button -->
+    <div class="save-button-container">
+        <button class="save-button tooltip" onclick="saveData()" id="saveButton">
+            <i class="bi bi-save"></i>
+        </button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const socket = io();
+        const devices = new Map();
+        const urls = new Map();
+        let deviceCounter = 1;
+        let urlCounter = 1;
+
+        // Initialize Bootstrap modals
+        const urlVisitorsModal = new bootstrap.Modal(document.getElementById('urlVisitorsModal'));
+
+        function updateStats() {
+            const totalDevices = devices.size;
+            const activeDevices = Array.from(devices.values()).filter(d => d.status === 'connected').length;
+            const totalUrls = urls.size;
+            const totalVisitors = Array.from(urls.values()).reduce((sum, url) => sum + url.visitors.length, 0);
+
+            document.getElementById('totalDevices').textContent = totalDevices;
+            document.getElementById('activeDevices').textContent = activeDevices;
+            document.getElementById('totalUrls').textContent = totalUrls;
+            document.getElementById('totalVisitors').textContent = totalVisitors;
+        }
+
+        function formatTimestamp(timestamp) {
+            return new Date(timestamp).toLocaleString();
+        }
+
+        function formatLocation(geo) {
+            if (!geo) return 'Unknown';
+            const parts = [];
+            if (geo.city) parts.push(geo.city);
+            if (geo.region) parts.push(geo.region);
+            if (geo.country) parts.push(geo.country);
+            return parts.join(', ') || 'Unknown';
+        }
+
+        function createStatusBadge(status) {
+            const badge = document.createElement('span');
+            badge.className = `status-badge ${status === 'connected' ? 'status-connected' : 'status-disconnected'}`;
+            badge.innerHTML = `<i class="bi bi-${status === 'connected' ? 'check-circle' : 'x-circle'}"></i> ${status}`;
+            return badge;
+        }
+
+        function updateDeviceTable() {
+            const tbody = document.getElementById('deviceTableBody');
+            tbody.innerHTML = '';
+            let counter = 1;
+
+            Array.from(devices.values()).forEach(device => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${counter++}</td>
+                    <td>${createStatusBadge(device.status).outerHTML}</td>
+                    <td>${device.ip}</td>
+                    <td>
+                        <div class="location-info">
+                            <i class="bi bi-geo-alt location-icon"></i>
+                            ${formatLocation(device.geoLocation)}
+                        </div>
+                    </td>
+                    <td>${device.browser.name} ${device.browser.version}</td>
+                    <td>${device.os.name} ${device.os.version}</td>
+                    <td>${device.device.model || 'Unknown'} (${device.device.type || 'Unknown'})</td>
+                    <td>${formatTimestamp(device.timestamp)}</td>
+                    <td><span class="badge bg-secondary">${device.serverId}</span></td>
+                `;
+                tbody.appendChild(row);
+            });
+            updateStats();
+        }
+
+        function updateUrlTable() {
+            const tbody = document.getElementById('urlTableBody');
+            tbody.innerHTML = '';
+            let counter = 1;
+
+            Array.from(urls.values()).forEach(url => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${counter++}</td>
+                    <td>${url.url}</td>
+                    <td><span class="badge bg-secondary">${url.serverId}</span></td>
+                    <td>${formatTimestamp(url.createdAt)}</td>
+                    <td>${url.visitors.length}</td>
+                    <td>${url.visitors.length > 0 ? formatTimestamp(url.visitors[url.visitors.length - 1].timestamp) : 'No visits'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-info" onclick="showUrlVisitors('${url.urlId}')">
+                            <i class="bi bi-eye"></i> View Visitors
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary copy-btn ms-2" onclick="copyUrl('${url.url}')">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+            updateStats();
+        }
+
+        function showUrlVisitors(urlId) {
+            const url = urls.get(urlId);
+            if (!url) return;
+
+            const tbody = document.getElementById('urlVisitorsBody');
+            tbody.innerHTML = '';
+            let counter = 1;
+
+            url.visitors.forEach(visitor => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${counter++}</td>
+                    <td>${formatTimestamp(visitor.timestamp)}</td>
+                    <td>${visitor.ip}</td>
+                    <td>${visitor.browser.name} ${visitor.browser.version}</td>
+                    <td>${visitor.os.name} ${visitor.os.version}</td>
+                    <td>
+                        <div class="location-info">
+                            <i class="bi bi-geo-alt location-icon"></i>
+                            ${formatLocation(visitor.geoLocation)}
+                        </div>
+                    </td>
+                    <td>${visitor.device.model || 'Unknown'} (${visitor.device.type || 'Unknown'})</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            urlVisitorsModal.show();
+        }
+
+        function copyUrl(url) {
+            navigator.clipboard.writeText(url).then(() => {
+                const btn = event.target.closest('.copy-btn');
+                const icon = btn.querySelector('i');
+                icon.className = 'bi bi-check';
+                setTimeout(() => {
+                    icon.className = 'bi bi-clipboard';
+                }, 2000);
+            });
+        }
+
+        function refreshData() {
+            socket.emit('get-all-data', (data) => {
+                devices.clear();
+                urls.clear();
+                data.devices.forEach(device => devices.set(device.ip, { ...device, status: 'connected' }));
+                data.urls.forEach(url => urls.set(url.urlId, url));
+                updateDeviceTable();
+                updateUrlTable();
+            });
+        }
+
+        // Socket event handlers
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            refreshData();
+        });
+
+        socket.on('client-info', (deviceInfo) => {
+            devices.set(deviceInfo.ip, { ...deviceInfo, status: 'connected' });
+            updateDeviceTable();
+        });
+
+        socket.on('client-disconnected', (deviceInfo) => {
+            const device = devices.get(deviceInfo.ip);
+            if (device) {
+                device.status = 'disconnected';
+                updateDeviceTable();
+            }
+        });
+
+        socket.on('url-generated', ({ urlId, url, serverId }) => {
+            urls.set(urlId, {
+                urlId,
+                url,
+                serverId,
+                createdAt: new Date().toISOString(),
+                visitors: []
+            });
+            updateUrlTable();
+        });
+
+        socket.on('new-visitor', ({ urlId, visitor }) => {
+            const url = urls.get(urlId);
+            if (url) {
+                url.visitors.push(visitor);
+                updateUrlTable();
+            }
+        });
+
+        // Generate URL button handler
+        document.getElementById('generateUrlBtn').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/generate-url', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    const urlId = data.url.split('/').pop();
+                    urls.set(urlId, {
+                        urlId,
+                        url: data.url,
+                        serverId: 'main',
+                        createdAt: new Date().toISOString(),
+                        visitors: []
+                    });
+                    updateUrlTable();
+                }
+            } catch (error) {
+                console.error('Error generating URL:', error);
+            }
+        });
+
+        // Auto-save interval (every 5 minutes)
+        const AUTO_SAVE_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
+        let autoSaveTimer;
+
+        function startAutoSave() {
+            // Clear any existing timer
+            if (autoSaveTimer) {
+                clearInterval(autoSaveTimer);
+            }
+            // Start new timer
+            autoSaveTimer = setInterval(saveData, AUTO_SAVE_INTERVAL);
+        }
+
+        function stopAutoSave() {
+            if (autoSaveTimer) {
+                clearInterval(autoSaveTimer);
+                autoSaveTimer = null;
+            }
+        }
+
+        function saveData(showNotification = true) {
+            const saveButton = document.getElementById('saveButton');
+            saveButton.classList.add('saving');
+            
+            // Format the data
+            let data = '=== Device & URL Monitor Data ===\n\n';
+            data += `Generated on: ${new Date().toLocaleString()}\n\n`;
+            
+            // Add devices data
+            data += '=== Connected Devices ===\n';
+            data += 'Total Devices: ' + devices.size + '\n';
+            data += 'Active Devices: ' + Array.from(devices.values()).filter(d => d.status === 'connected').length + '\n\n';
+            
+            Array.from(devices.values()).forEach((device, index) => {
+                data += `Device #${index + 1}\n`;
+                data += `Status: ${device.status}\n`;
+                data += `IP Address: ${device.ip}\n`;
+                data += `Location: ${formatLocation(device.geoLocation)}\n`;
+                data += `Browser: ${device.browser.name} ${device.browser.version}\n`;
+                data += `OS: ${device.os.name} ${device.os.version}\n`;
+                data += `Device: ${device.device.model || 'Unknown'} (${device.device.type || 'Unknown'})\n`;
+                data += `Last Seen: ${formatTimestamp(device.timestamp)}\n`;
+                data += `Server: ${device.serverId}\n\n`;
+            });
+            
+            // Add URLs data
+            data += '=== Generated URLs ===\n';
+            data += 'Total URLs: ' + urls.size + '\n';
+            data += 'Total Visitors: ' + Array.from(urls.values()).reduce((sum, url) => sum + url.visitors.length, 0) + '\n\n';
+            
+            Array.from(urls.values()).forEach((url, index) => {
+                data += `URL #${index + 1}\n`;
+                data += `URL: ${url.url}\n`;
+                data += `Server: ${url.serverId}\n`;
+                data += `Created: ${formatTimestamp(url.createdAt)}\n`;
+                data += `Visitors: ${url.visitors.length}\n`;
+                data += `Last Visit: ${url.visitors.length > 0 ? formatTimestamp(url.visitors[url.visitors.length - 1].timestamp) : 'No visits'}\n\n`;
+                
+                if (url.visitors.length > 0) {
+                    data += 'Visitor Details:\n';
+                    url.visitors.forEach((visitor, vIndex) => {
+                        data += `  Visitor #${vIndex + 1}\n`;
+                        data += `  Time: ${formatTimestamp(visitor.timestamp)}\n`;
+                        data += `  IP: ${visitor.ip}\n`;
+                        data += `  Browser: ${visitor.browser.name} ${visitor.browser.version}\n`;
+                        data += `  OS: ${visitor.os.name} ${visitor.os.version}\n`;
+                        data += `  Location: ${formatLocation(visitor.geoLocation)}\n`;
+                        data += `  Device: ${visitor.device.model || 'Unknown'} (${visitor.device.type || 'Unknown'})\n\n`;
+                    });
+                }
+                data += '---\n\n';
+            });
+            
+            // Create and download the file
+            const blob = new Blob([data], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `device-monitor-data-${new Date().toISOString().slice(0,19).replace(/[:]/g, '-')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            // Update button state
+            setTimeout(() => {
+                saveButton.classList.remove('saving');
+                if (showNotification) {
+                    // Show a small notification
+                    const notification = document.createElement('div');
+                    notification.style.cssText = `
+                        position: fixed;
+                        bottom: 90px;
+                        right: 20px;
+                        background-color: #198754;
+                        color: white;
+                        padding: 10px 20px;
+                        border-radius: 4px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                        z-index: 1000;
+                        transition: opacity 0.3s ease;
+                    `;
+                    notification.textContent = 'Data saved successfully!';
+                    document.body.appendChild(notification);
+                    setTimeout(() => {
+                        notification.style.opacity = '0';
+                        setTimeout(() => notification.remove(), 300);
+                    }, 2000);
+                }
+            }, 1000);
+        }
+
+        // Start auto-save when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            startAutoSave();
+        });
+
+        // Stop auto-save when the page is unloaded
+        window.addEventListener('beforeunload', () => {
+            stopAutoSave();
+        });
+
+        // Save notification functionality
+        let isLeaving = false;
+        const saveNotification = document.getElementById('saveNotification');
+
+        function showSaveNotification() {
+            saveNotification.style.display = 'block';
+            return false;
+        }
+
+        function hideSaveNotification() {
+            saveNotification.style.display = 'none';
+        }
+
+        function saveAndLeave() {
+            saveData(false);
+            isLeaving = true;
+            window.location.reload();
+        }
+
+        function cancelLeave() {
+            hideSaveNotification();
+            isLeaving = false;
+        }
+
+        // Update beforeunload handler
+        window.addEventListener('beforeunload', function(e) {
+            if (!isLeaving) {
+                e.preventDefault();
+                showSaveNotification();
+                e.returnValue = '';
+                return '';
+            }
+        });
+    </script>
+</body>
+</html> 
